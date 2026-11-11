@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, setToken, getToken, clearToken } from './api'
+import Carousel from './Carousel'
+import Tabs from './Tabs'
 
 type Stage = 'idle' | 'waiting' | 'authed'
 
@@ -14,6 +16,18 @@ type Profile = {
   budget_range: string | null
   city: string | null
 }
+type Recipient = {
+  id: string
+  name: string
+  relationship: string
+  gender: string
+  birth_date: string | null
+  age: number | null
+  occasion: string | null
+  relationship_level: string | null
+  budget_range: string | null
+  details: Record<string, unknown> | null
+}
 
 const OCCUPATIONS = ['it', 'creative', 'business', 'science', 'healthcare', 'services', 'blue_collar', 'finance', 'education', 'student', 'other']
 const BUDGETS = ['symbolic', 'standard', 'solid', 'premium']
@@ -27,12 +41,16 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileLoaded, setProfileLoaded] = useState(false)
+  const [recipients, setRecipients] = useState<Recipient[]>([])
+  const [selectedRecipient, setSelectedRecipient] = useState<Recipient | null>(null)
+  const [mainTab, setMainTab] = useState<'recipients' | 'feed'>('recipients')
 
   useEffect(() => {
     if (stage !== 'authed') return
     api.me().then(setMe).catch(() => setMe(null))
     api.getProfile().then((p) => { setProfile(p as Profile | null); setProfileLoaded(true) })
       .catch(() => setProfileLoaded(true))
+    api.listRecipients().then((r) => setRecipients(r as unknown as Recipient[])).catch(() => {})
   }, [stage])
 
   useEffect(() => {
@@ -82,15 +100,112 @@ export default function App() {
   if (!profileLoaded) return <div style={{ padding: 40 }}>Загрузка…</div>
 
   if (!profile) {
-    return <Onboarding onSaved={(p) => setProfile(p)} username={me?.username ?? null} />
+    return <Onboarding onSaved={(p) => { setProfile(p); api.listRecipients().then((r) => setRecipients(r as unknown as Recipient[])).catch(() => {}) }} username={me?.username ?? null} />
+  }
+
+  if (selectedRecipient) {
+    return <Carousel recipientId={selectedRecipient.id} recipientName={selectedRecipient.name}
+      onBack={() => setSelectedRecipient(null)} />
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: '40px auto', fontFamily: 'system-ui' }}>
+    <div style={{ maxWidth: 960, margin: '40px auto', fontFamily: 'system-ui', padding: 16 }}>
       <h1>CooBee</h1>
-      <p>Вы вошли как @{me?.username ?? me?.telegram_id}. Профиль заполнен.</p>
-      <pre style={{ background: '#f4f4f4', padding: 12, borderRadius: 8 }}>{JSON.stringify(profile, null, 2)}</pre>
-      <button onClick={() => { clearToken(); setStage('idle'); setMe(null); setProfile(null); setProfileLoaded(false) }}>Выйти</button>
+      <p>Вы вошли как @{me?.username ?? me?.telegram_id}.</p>
+
+      <div style={{ display: 'flex', gap: 8, margin: '16px 0' }}>
+        <button onClick={() => setMainTab('recipients')}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc',
+                         background: mainTab === 'recipients' ? '#1f6feb' : '#fff',
+                         color: mainTab === 'recipients' ? '#fff' : '#000' }}>
+          Мои получатели
+        </button>
+        <button onClick={() => setMainTab('feed')}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc',
+                         background: mainTab === 'feed' ? '#1f6feb' : '#fff',
+                         color: mainTab === 'feed' ? '#fff' : '#000' }}>
+          Для себя
+        </button>
+      </div>
+
+      {mainTab === 'feed' && <Tabs />}
+
+      {mainTab === 'recipients' && <>
+        <h2 style={{ fontSize: 18, marginTop: 24 }}>Мои получатели</h2>
+        {recipients.length === 0 && <p style={{ color: '#888' }}>Пока никого нет. Добавьте получателя ниже.</p>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+          {recipients.map((r) => (
+            <div key={r.id} style={{ border: '1px solid #eee', borderRadius: 12, padding: 12 }}>
+              <div style={{ fontWeight: 600 }}>{r.name}</div>
+              <div style={{ fontSize: 13, color: '#666' }}>{r.relationship}</div>
+              <button onClick={() => setSelectedRecipient(r)} style={{ marginTop: 8, width: '100%', padding: 8 }}>Подобрать подарок</button>
+            </div>
+          ))}
+        </div>
+
+        <RecipientForm onCreated={(r) => setRecipients((rs) => [...rs, r])} />
+      </>}
+
+      <button onClick={() => { clearToken(); setStage('idle'); setMe(null); setProfile(null); setProfileLoaded(false); setRecipients([]); setMainTab('recipients') }}
+        style={{ marginTop: 24 }}>Выйти</button>
+    </div>
+  )
+}
+
+function RecipientForm({ onCreated }: { onCreated: (r: Recipient) => void }) {
+  const [name, setName] = useState('')
+  const [relationship, setRelationship] = useState('mother')
+  const [gender, setGender] = useState('unisex')
+  const [mode, setMode] = useState<'date' | 'age'>('date')
+  const [birthDate, setBirthDate] = useState('')
+  const [age, setAge] = useState('')
+  const [occasion, setOccasion] = useState('birthday')
+  const [budget, setBudget] = useState('standard')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function submit() {
+    setError(''); setSaving(true)
+    try {
+      const payload: Record<string, unknown> = { name, relationship, gender, occasion, budget_range: budget }
+      if (mode === 'date' && birthDate) payload.birth_date = birthDate
+      else if (mode === 'age' && age) payload.age = Number(age)
+      else throw new Error('укажите дату или возраст')
+      const r = await api.createRecipient(payload)
+      onCreated(r as unknown as Recipient)
+      setName(''); setBirthDate(''); setAge('')
+    } catch (e) { setError(String(e)) } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{ marginTop: 24, border: '1px solid #eee', borderRadius: 12, padding: 16 }}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>Добавить получателя</h2>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <input placeholder="Имя" value={name} onChange={(e) => setName(e.target.value)} />
+        <select value={relationship} onChange={(e) => setRelationship(e.target.value)}>
+          {['mother', 'father', 'wife', 'husband', 'boyfriend', 'girlfriend', 'brother', 'sister', 'friend_m', 'friend_f', 'colleague', 'boss', 'child', 'other'].map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={gender} onChange={(e) => setGender(e.target.value)}>
+          <option value="unisex">унисекс</option>
+          <option value="male">мужской</option>
+          <option value="female">женский</option>
+        </select>
+        <div>
+          <label><input type="radio" checked={mode === 'date'} onChange={() => setMode('date')} /> Дата рождения</label>
+          <label style={{ marginLeft: 16 }}><input type="radio" checked={mode === 'age'} onChange={() => setMode('age')} /> Только возраст</label>
+        </div>
+        {mode === 'date'
+          ? <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
+          : <input type="number" min={0} max={120} placeholder="35" value={age} onChange={(e) => setAge(e.target.value)} />}
+        <select value={occasion} onChange={(e) => setOccasion(e.target.value)}>
+          {['birthday', 'new_year', 'feb23', 'mar8', 'wedding', 'anniversary', 'newborn', 'sep1', 'teacher_day', 'just_because', 'housewarming', 'other'].map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <select value={budget} onChange={(e) => setBudget(e.target.value)}>
+          {BUDGETS.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        {error && <p style={{ color: 'crimson', margin: 0 }}>{error}</p>}
+        <button onClick={submit} disabled={saving || !name}>{saving ? 'Сохраняем…' : 'Добавить'}</button>
+      </div>
     </div>
   )
 }

@@ -1,35 +1,80 @@
 [
   {
-    "title": "Кофейная пара",
-    "description": "Чашки ручной работы",
-    "price_min": 800,
+    "external_id": "item_001",
+    "title": "Спиннинг телескопический 2.1м",
+    "description": "Для рыбалки и путешествий",
+    "price_min": 1500,
     "price_max": 2500,
-    "tags": ["coffee", "handmade"],
-    "marketplace_url": "https://www.ozon.ru/product/111",
+    "tags": ["fishing", "travel"],
+    "marketplace_url": "https://www.wildberries.ru/catalog/001",
+    "is_available": true,
+    "is_paired": false,
+    "delivery_type": "physical",
+    "details": {"brand": "Daiwa", "rating": 4.5, "occasion": ["birthday", "new_year"], "gender_affinity": "male", "age_groups": ["26-35", "36-45", "46-55"]}
+  },
+  {
+    "external_id": "item_002",
+    "title": "Набор ножей шефа 3шт",
+    "description": "Кухонные ножи для дома",
+    "price_min": 2000,
+    "price_max": 3500,
+    "tags": ["cooking", "home"],
+    "marketplace_url": "https://www.wildberries.ru/catalog/002",
+    "is_available": true,
+    "is_paired": false,
+    "delivery_type": "physical",
+    "details": {"brand": "Samura", "rating": 4.8, "occasion": ["birthday", "wedding"], "gender_affinity": "any", "age_groups": ["26-35", "36-45", "46-55"]}
+  },
+  {
+    "external_id": "item_003",
+    "title": "Кофемолка ручная",
+    "description": "Для любителей кофе",
+    "price_min": 2200,
+    "price_max": 3800,
+    "tags": ["coffee", "cooking"],
+    "marketplace_url": "https://www.wildberries.ru/catalog/003",
+    "is_available": true,
+    "is_paired": false,
+    "delivery_type": "physical",
+    "details": {"brand": "Timemore", "rating": 4.6, "occasion": ["birthday", "new_year"], "gender_affinity": "any", "age_groups": ["26-35", "36-45"]}
+  },
+  {
+    "external_id": "item_004",
+    "title": "Смарт-часы фитнес-трекер",
+    "description": "Для спорта и здоровья",
+    "price_min": 3000,
+    "price_max": 5500,
+    "tags": ["tech", "sport"],
+    "marketplace_url": "https://www.wildberries.ru/catalog/004",
+    "is_available": true,
+    "is_paired": false,
+    "delivery_type": "physical",
+    "details": {"brand": "Xiaomi", "rating": 4.5, "occasion": ["birthday", "new_year"], "gender_affinity": "any", "age_groups": ["18-25", "26-35", "36-45"]}
+  },
+  {
+    "external_id": "item_005",
+    "title": "Книга «Атлас тихой жизни»",
+    "description": "Подарочное издание",
+    "price_min": 1200,
+    "price_max": 2000,
+    "tags": ["books_nonfiction", "art"],
+    "marketplace_url": "https://www.wildberries.ru/catalog/005",
+    "is_available": true,
+    "is_paired": false,
+    "delivery_type": "physical",
+    "details": {"brand": "МИФ", "rating": 4.7, "occasion": ["birthday", "new_year"], "gender_affinity": "any", "age_groups": ["26-35", "36-45", "46-55", "56+"]}
+  },
+  {
+    "external_id": "item_006",
+    "title": "Сертификат на ужин для двоих",
+    "description": "Романтический ужин в ресторане",
+    "price_min": 4000,
+    "price_max": 8000,
+    "tags": ["cooking", "travel"],
+    "marketplace_url": "https://example.com/cert/006",
     "is_available": true,
     "is_paired": true,
-    "delivery_type": "physical"
-  },
-  {
-    "title": "Книга по астрономии",
-    "description": "Подарочное издание",
-    "price_min": 1500,
-    "price_max": 3000,
-    "tags": ["books_nonfiction", "astronomy"],
-    "marketplace_url": "https://www.wildberries.ru/catalog/222",
-    "is_available": true,
-    "is_paired": false,
-    "delivery_type": "physical"
-  },
-  {
-    "title": "Сертификат на мастер-класс",
-    "description": "Гончарное дело, 2 часа",
-    "price_min": 3000,
-    "price_max": 5000,
-    "tags": ["handmade", "art"],
-    "marketplace_url": "https://example.com/cert/333",
-    "is_available": true,
-    "is_paired": false,
-    "delivery_type": "certificate"
+    "delivery_type": "certificate",
+    "details": {"brand": "Ресторан", "rating": 4.8, "occasion": ["anniversary", "wedding", "birthday"], "gender_affinity": "any", "age_groups": ["26-35", "36-45", "46-55"]}
   }
 ]

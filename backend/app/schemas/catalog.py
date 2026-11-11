@@ -1,7 +1,9 @@
 import uuid
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
+
 
 class CatalogItemIn(BaseModel):
+    external_id: str | None = None
     title: str
     description: str | None = None
     price_min: int | None = None
@@ -13,6 +15,8 @@ class CatalogItemIn(BaseModel):
     is_paired: bool = False
     delivery_type: str = "physical"
     delivery_regions: list[str] | None = None
+    details: dict | None = None
+
 
 class CatalogItemOut(CatalogItemIn):
     id: uuid.UUID
