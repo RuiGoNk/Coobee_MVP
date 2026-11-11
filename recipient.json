@@ -1,0 +1,13 @@
+{
+  "name": "Мама",
+  "relationship": "mother",
+  "gender": "female",
+  "birth_date": "1965-03-15",
+  "occasion": "birthday",
+  "relationship_level": "very_close",
+  "budget_range": "standard",
+  "details": {
+    "interests": ["cooking", "gardening"],
+    "style": ["classic"]
+  }
+}

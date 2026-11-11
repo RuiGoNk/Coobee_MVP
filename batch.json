@@ -1,0 +1,35 @@
+[
+  {
+    "title": "Кофейная пара",
+    "description": "Чашки ручной работы",
+    "price_min": 800,
+    "price_max": 2500,
+    "tags": ["coffee", "handmade"],
+    "marketplace_url": "https://www.ozon.ru/product/111",
+    "is_available": true,
+    "is_paired": true,
+    "delivery_type": "physical"
+  },
+  {
+    "title": "Книга по астрономии",
+    "description": "Подарочное издание",
+    "price_min": 1500,
+    "price_max": 3000,
+    "tags": ["books_nonfiction", "astronomy"],
+    "marketplace_url": "https://www.wildberries.ru/catalog/222",
+    "is_available": true,
+    "is_paired": false,
+    "delivery_type": "physical"
+  },
+  {
+    "title": "Сертификат на мастер-класс",
+    "description": "Гончарное дело, 2 часа",
+    "price_min": 3000,
+    "price_max": 5000,
+    "tags": ["handmade", "art"],
+    "marketplace_url": "https://example.com/cert/333",
+    "is_available": true,
+    "is_paired": false,
+    "delivery_type": "certificate"
+  }
+]

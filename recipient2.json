@@ -1,0 +1,11 @@
+{
+  "name": "Коллега",
+  "relationship": "colleague",
+  "gender": "male",
+  "age": 35,
+  "occasion": "new_year",
+  "budget_range": "symbolic",
+  "details": {
+    "interests": ["tech", "gaming"]
+  }
+}
