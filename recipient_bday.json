@@ -1,0 +1,8 @@
+{
+  "name": "ТестДР",
+  "relationship": "friend_m",
+  "gender": "male",
+  "birth_date": "1990-11-25",
+  "occasion": "birthday",
+  "budget_range": "standard"
+}

@@ -23,5 +23,6 @@ class Recipient(Base):
     relationship_level: Mapped[str | None] = mapped_column(String(16))
     budget_range: Mapped[str | None] = mapped_column(String(16))
     details: Mapped[dict | None] = mapped_column(JSONB)            # interests, style, family, pets, delivery...
+    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

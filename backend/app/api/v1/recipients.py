@@ -23,6 +23,7 @@ class RecipientIn(BaseModel):
     relationship_level: str | None = None
     budget_range: str | None = None
     details: dict | None = None
+    notifications_enabled: bool = True
 
     @model_validator(mode="after")
     def check_age(self):

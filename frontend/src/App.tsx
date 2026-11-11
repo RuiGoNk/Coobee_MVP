@@ -161,13 +161,14 @@ function RecipientForm({ onCreated }: { onCreated: (r: Recipient) => void }) {
   const [age, setAge] = useState('')
   const [occasion, setOccasion] = useState('birthday')
   const [budget, setBudget] = useState('standard')
+  const [notify, setNotify] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     setError(''); setSaving(true)
     try {
-      const payload: Record<string, unknown> = { name, relationship, gender, occasion, budget_range: budget }
+      const payload: Record<string, unknown> = { name, relationship, gender, occasion, budget_range: budget, notifications_enabled: notify }
       if (mode === 'date' && birthDate) payload.birth_date = birthDate
       else if (mode === 'age' && age) payload.age = Number(age)
       else throw new Error('укажите дату или возраст')
@@ -203,6 +204,9 @@ function RecipientForm({ onCreated }: { onCreated: (r: Recipient) => void }) {
         <select value={budget} onChange={(e) => setBudget(e.target.value)}>
           {BUDGETS.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
+        <label>
+          <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} /> Напоминать о праздниках
+        </label>
         {error && <p style={{ color: 'crimson', margin: 0 }}>{error}</p>}
         <button onClick={submit} disabled={saving || !name}>{saving ? 'Сохраняем…' : 'Добавить'}</button>
       </div>
