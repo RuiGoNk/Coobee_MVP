@@ -21,6 +21,13 @@ celery.conf.beat_schedule = {
         "task": "app.tasks.weekly_drop",
         "schedule": crontab(hour=10, minute=0, day_of_week=4),
     },
+    # Ежедневно 10:00 MSK: напоминания 7/3/1 день (анкеты + отправка подарков).
+    # santa_generate_suggestions в расписание НЕ ставим — запускается
+    # по требованию из POST /draw через .delay().
+    "santa-reminders-daily": {
+        "task": "app.tasks.santa_reminders",
+        "schedule": crontab(hour=10, minute=0),
+    },
 }
 
 celery.autodiscover_tasks(["app"])

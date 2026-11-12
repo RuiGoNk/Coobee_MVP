@@ -116,3 +116,137 @@ async def _weekly_drop() -> None:
 @celery.task(name="app.tasks.weekly_drop")
 def weekly_drop() -> None:
     _run(_weekly_drop())
+
+
+# ===========================================================================
+# Santa module
+# ===========================================================================
+
+async def _santa_generate_suggestions(draw_id) -> None:
+    """
+    Генерация подборок для всех assignment конкретного draw.
+    Вызывается из Celery после POST /draw.
+    """
+    import uuid as _uuid
+
+    from app.services.santa.generation import generate_for_draw
+
+    if isinstance(draw_id, str):
+        draw_id = _uuid.UUID(draw_id)
+
+    async with SessionLocal() as db:
+        try:
+            count = await generate_for_draw(db, draw_id, send_notifications=True)
+            await db.commit()
+            print(f"santa_generate_suggestions draw={draw_id} created={count}")
+        except Exception as exc:  # noqa: BLE001
+            await db.rollback()
+            print(f"santa_generate_suggestions error: {type(exc).__name__}: {exc}")
+            raise
+
+
+@celery.task(name="app.tasks.santa_generate_suggestions")
+def santa_generate_suggestions(draw_id: str) -> None:
+    _run(_santa_generate_suggestions(draw_id))
+
+
+# ---------------------------------------------------------------------------
+# Напоминания 7/3/1 день (анкеты и отправка подарков)
+# ---------------------------------------------------------------------------
+
+_PROFILE_REMINDER_OFFSET_DAYS = 7
+_REMINDER_THRESHOLDS = {7, 3, 1}
+
+
+async def _santa_reminders() -> None:
+    """
+    Для каждой активной комнаты:
+    - до дедлайна анкет (event_date - 7 дней): 7/3/1 → напомнить без profile_full;
+    - до дедлайна отправки (event_date): 7/3/1 → напомнить Сантам с gift_status='pending'.
+
+    Если в Room появятся отдельные дедлайны — заменить эвристику.
+    """
+    from datetime import timedelta
+
+    from app.models.santa import Assignment, Draw, Participant, Room
+    from app.services.santa import notifications as notif
+
+    today = date.today()
+
+    async with SessionLocal() as db:
+        try:
+            rooms_stmt = select(Room).where(
+                Room.status.in_(("collecting", "drawn", "in_progress"))
+            )
+            rooms = (await db.execute(rooms_stmt)).scalars().all()
+
+            for room in rooms:
+                if room.event_date is None:
+                    continue
+
+                profile_deadline = room.event_date - timedelta(
+                    days=_PROFILE_REMINDER_OFFSET_DAYS
+                )
+                shipping_deadline = room.event_date
+
+                days_to_profile = (profile_deadline - today).days
+                days_to_shipping = (shipping_deadline - today).days
+
+                if days_to_profile in _REMINDER_THRESHOLDS:
+                    await _santa_remind_profiles(db, room, days_to_profile, notif)
+
+                if days_to_shipping in _REMINDER_THRESHOLDS:
+                    await _santa_remind_shipping(db, room, days_to_shipping, notif)
+
+            await db.commit()
+        except Exception as exc:  # noqa: BLE001
+            await db.rollback()
+            print(f"santa_reminders error: {type(exc).__name__}: {exc}")
+            raise
+
+
+async def _santa_remind_profiles(db, room, days_left: int, notif) -> None:
+    from app.models.santa import Participant
+
+    stmt = select(Participant).where(
+        Participant.room_id == room.id,
+        Participant.is_deleted.is_(False),
+        Participant.status.in_(("joined", "profile_min")),
+    )
+    for p in (await db.execute(stmt)).scalars().all():
+        user = await db.get(User, p.user_id)
+        if user:
+            await notif.notify_profile_reminder(db, user, room.title, days_left)
+
+
+async def _santa_remind_shipping(db, room, days_left: int, notif) -> None:
+    from app.models.santa import Assignment, Draw, Participant
+
+    d_stmt = (
+        select(Draw)
+        .where(Draw.room_id == room.id)
+        .order_by(Draw.drawn_at.desc())
+        .limit(1)
+    )
+    d = (await db.execute(d_stmt)).scalar_one_or_none()
+    if d is None:
+        return
+
+    a_stmt = select(Assignment).where(
+        Assignment.draw_id == d.id,
+        Assignment.gift_status == "pending",
+    )
+    for a in (await db.execute(a_stmt)).scalars().all():
+        if a.santa_participant_id is None:
+            continue
+        santa = await db.get(Participant, a.santa_participant_id)
+        if santa is None:
+            continue
+        user = await db.get(User, santa.user_id)
+        if user:
+            await notif.notify_shipping_reminder(db, user, room.title, days_left)
+
+
+@celery.task(name="app.tasks.santa_reminders")
+def santa_reminders() -> None:
+    _run(_santa_reminders())

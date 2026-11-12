@@ -5,3 +5,5 @@ static/uploads/
 certs/
 .venv/
 .idea/
+# Dev-override (локальная разработка, не для прода)
+docker-compose.override.yml
