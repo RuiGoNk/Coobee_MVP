@@ -53,8 +53,13 @@ export type CatalogItemShort = {
   tags: string[] | null
 }
 
+export type Badge = { code: string; label: string }
+export type Marketplace = { name: string; url: string }
+
 export type RecommendItem = CatalogItemShort & {
-  badge: 'match' | 'surprise'
+  marketplaces: Marketplace[] | null
+  badges: Badge[] | null
+  why: string | null
 }
 
 export const api = {
@@ -83,6 +88,8 @@ export const api = {
   listRecipients: () => request<Array<Record<string, unknown>>>('/recipients'),
   createRecipient: (payload: Record<string, unknown>) =>
     request<Record<string, unknown>>('/recipients', { method: 'POST', body: JSON.stringify(payload) }),
+  recipientLikes: (recipientId: string) =>
+    request<RecommendItem[]>(`/recipients/${recipientId}/likes`),
   updateRecipient: (id: string, payload: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/recipients/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteRecipient: (id: string) =>
@@ -96,7 +103,7 @@ export const api = {
     }),
 
   // feedback (upsert + delete)
-  feedback: (externalId: string, action: FeedbackAction, context: FeedbackContext, recipientId?: string) =>
+  feedback: (externalId: string, action: FeedbackAction, context: FeedbackContext, recipientId?: string, why?: string | null) =>
     request<FeedbackOut>('/feedback', {
       method: 'POST',
       body: JSON.stringify({
@@ -104,6 +111,7 @@ export const api = {
         action,
         context,
         recipient_id: recipientId ?? null,
+        why: why ?? null,
       }),
     }),
   removeFeedback: (externalId: string, context: FeedbackContext, recipientId?: string) => {

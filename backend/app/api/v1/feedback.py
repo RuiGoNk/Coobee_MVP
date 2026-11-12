@@ -22,6 +22,7 @@ class FeedbackIn(BaseModel):
     action: str
     context: str = "recipient"
     recipient_id: uuid.UUID | None = None
+    why: str | None = None
 
     @field_validator("action")
     @classmethod
@@ -81,9 +82,11 @@ async def upsert_feedback(
             Feedback.context == "self_wishlist",
         )
 
+    meta = {"why": payload.why} if payload.why else None
     existing = (await db.execute(stmt)).scalar_one_or_none()
     if existing:
         existing.action = payload.action
+        existing.meta = meta
         fb = existing
     else:
         fb = Feedback(
@@ -92,6 +95,7 @@ async def upsert_feedback(
             recipient_id=payload.recipient_id if payload.context == "recipient" else None,
             action=payload.action,
             context=payload.context,
+            meta=meta,
         )
         db.add(fb)
     await db.commit()

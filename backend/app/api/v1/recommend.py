@@ -28,7 +28,9 @@ class RecommendItem(BaseModel):
     price_max: int | None
     image_url: str | None
     marketplace_url: str | None
-    badge: str  # "match" | "surprise"
+    marketplaces: list[dict] | None = None
+    badges: list[dict] | None = None
+    why: str | None = None
 
 
 class RecommendOut(BaseModel):
@@ -84,12 +86,7 @@ def _fallback_recommend(items: list[CatalogItem], recipient: dict) -> list[Catal
         return s
 
     ranked = sorted(items, key=score, reverse=True)
-    if len(ranked) < 5:
-        return ranked
-    matches = ranked[:4]
-    rest = ranked[4:]
-    surprise = random.choice(rest) if rest else ranked[-1]
-    return matches + [surprise]
+    return ranked[:5]
 
 
 @router.post("", response_model=RecommendOut)
@@ -108,21 +105,33 @@ async def recommend(
     user_dict = _profile_to_dict(user, profile)
     recipient_dict = _recipient_to_dict(rec)
 
-    have_stmt = select(Feedback.item_id).where(
+    # исключаем все оценённые для этого получателя: like, dislike, have
+    rated_stmt = select(Feedback.item_id).where(
         Feedback.user_id == user.id,
-        Feedback.action == "have",
+        Feedback.action.in_(["like", "dislike", "have"]),
         Feedback.context == "recipient",
         Feedback.recipient_id == rec.id,
     )
-    have_ids = set((await db.execute(have_stmt)).scalars().all())
+    rated_ids = set((await db.execute(rated_stmt)).scalars().all())
 
     items_stmt = select(CatalogItem).where(CatalogItem.is_available.is_(True))
-    all_items = [it for it in (await db.execute(items_stmt)).scalars().all() if it.id not in have_ids]
+    all_items = [it for it in (await db.execute(items_stmt)).scalars().all() if it.id not in rated_ids]
     # TODO: заменить на ml_service.get_recommendations(user_dict, recipient_dict)
     picked = _fallback_recommend(list(all_items), recipient_dict)
 
+    recipient_interests = set((recipient_dict.get("details") or {}).get("interests") or [])
     out: list[RecommendItem] = []
-    for i, it in enumerate(picked[:5]):
+    for it in picked[:5]:
+        it_tags = set(it.tags or [])
+        matched = sorted(it_tags & recipient_interests)
+        why_parts = []
+        if matched:
+            why_parts.append(f"совпадает по интересам: {', '.join(matched)}")
+        if it.price_min is not None and it.price_max is not None:
+            why_parts.append(f"в бюджете {it.price_min}–{it.price_max} ₽")
+        why = "; ".join(why_parts) or None
+
+        details = it.details or {}
         out.append(RecommendItem(
             external_id=it.external_id or str(it.id),
             title=it.title,
@@ -131,6 +140,8 @@ async def recommend(
             price_max=it.price_max,
             image_url=it.image_url,
             marketplace_url=it.marketplace_url,
-            badge="surprise" if i == 4 else "match",
+            marketplaces=details.get("marketplaces"),
+            badges=details.get("badges"),
+            why=why,
         ))
     return RecommendOut(items=out)

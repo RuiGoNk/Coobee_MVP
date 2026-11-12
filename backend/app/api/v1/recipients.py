@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_current_user, get_db
 from app.models.recipient import Recipient
 from app.models.user import User
+from app.models.catalog import CatalogItem
+from app.models.feedback import Feedback
 
 router = APIRouter(prefix="/recipients", tags=["recipients"])
 
@@ -98,3 +100,42 @@ async def delete_recipient(
     rec.is_deleted = True
     await db.commit()
     return None
+
+@router.get("/{recipient_id}/likes")
+async def recipient_likes(
+    recipient_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rec = await db.get(Recipient, recipient_id)
+    if not rec or rec.user_id != user.id or rec.is_deleted:
+        raise HTTPException(404, "recipient not found")
+    stmt = (
+        select(CatalogItem, Feedback)
+        .join(Feedback, Feedback.item_id == CatalogItem.id)
+        .where(
+            Feedback.user_id == user.id,
+            Feedback.recipient_id == recipient_id,
+            Feedback.action == "like",
+            Feedback.context == "recipient",
+        )
+        .order_by(Feedback.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+    result = []
+    for it, fb in rows:
+        details = it.details or {}
+        why = (fb.meta or {}).get("why") if fb.meta else None
+        result.append({
+            "external_id": it.external_id,
+            "title": it.title,
+            "description": it.description,
+            "price_min": it.price_min,
+            "price_max": it.price_max,
+            "image_url": it.image_url,
+            "marketplace_url": it.marketplace_url,
+            "marketplaces": details.get("marketplaces"),
+            "badges": details.get("badges"),
+            "why": why,
+        })
+    return result
