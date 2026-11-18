@@ -5,3 +5,5 @@ static/uploads/
 certs/
 .venv/
 .idea/
+
+docker-compose.override.yml*
