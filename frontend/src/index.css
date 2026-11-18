@@ -14,3 +14,158 @@ body {
   background: #f7f7f8;
   color: #1a1a1a;
 }
+
+/* ===========================================================================
+   Santa module — design tokens (по мотивам Беру: фиолетовый + красный)
+   Подключаются через класс .santa-scope на корне модуля.
+   Основной сайт (синий #1f6feb) не затрагивается.
+   =========================================================================== */
+
+.santa-scope {
+  /* Primary — фиолетовый */
+  --santa-primary: #4b1fbf;
+  --santa-primary-hover: #3d13a8;
+  --santa-primary-soft: #ede7fd;
+
+  /* Accent — красный (точечно: CTA, бейджи) */
+  --santa-accent: #e8251f;
+  --santa-accent-hover: #c81e19;
+  --santa-accent-soft: #fde8e7;
+
+  /* Праздничный акцент — тёплый жёлтый (иконки подарков, Санта) */
+  --santa-festive: #ffc838;
+  --santa-festive-soft: #fff6dc;
+
+  /* Фоны и поверхности */
+  --santa-bg: #f5f4fa;
+  --santa-surface: #ffffff;
+  --santa-lavender: #b9a6f0;
+
+  /* Текст */
+  --santa-text: #1a1a1a;
+  --santa-muted: #6b6b80;
+  --santa-border: #e5e2f0;
+
+  /* Статусы */
+  --santa-success: #1fa84c;
+  --santa-danger: #e53935;
+
+  /* Радиусы */
+  --santa-radius-card: 12px;
+  --santa-radius-input: 8px;
+  --santa-radius-pill: 999px;
+
+  /* Тени */
+  --santa-shadow: 0 2px 8px rgba(75, 31, 191, 0.08);
+  --santa-shadow-hover: 0 4px 16px rgba(75, 31, 191, 0.12);
+
+  /* Применяем фон/текст на корне модуля */
+  background: var(--santa-bg);
+  color: var(--santa-text);
+}
+
+/* === Кнопки === */
+
+.santa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--santa-radius-input);
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.05s ease;
+}
+.santa-btn:active { transform: scale(0.98); }
+.santa-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.santa-btn-primary {
+  background: var(--santa-accent);
+  color: #fff;
+}
+.santa-btn-primary:hover:not(:disabled) {
+  background: var(--santa-accent-hover);
+}
+
+.santa-btn-secondary {
+  background: var(--santa-primary);
+  color: #fff;
+}
+.santa-btn-secondary:hover:not(:disabled) {
+  background: var(--santa-primary-hover);
+}
+
+.santa-btn-ghost {
+  background: transparent;
+  color: var(--santa-primary);
+}
+.santa-btn-ghost:hover:not(:disabled) {
+  background: var(--santa-primary-soft);
+}
+
+/* === Карточки === */
+
+.santa-card {
+  background: var(--santa-surface);
+  border: 1px solid var(--santa-border);
+  border-radius: var(--santa-radius-card);
+  box-shadow: var(--santa-shadow);
+  padding: 20px;
+}
+
+.santa-card-hover:hover {
+  box-shadow: var(--santa-shadow-hover);
+}
+
+/* === Поля ввода === */
+
+.santa-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--santa-border);
+  border-radius: var(--santa-radius-input);
+  font-size: 15px;
+  color: var(--santa-text);
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.santa-input:focus {
+  border-color: var(--santa-primary);
+  box-shadow: 0 0 0 3px var(--santa-primary-soft);
+}
+.santa-input::placeholder { color: var(--santa-muted); }
+
+/* === Бейджи === */
+
+.santa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--santa-radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.santa-badge-accent { background: var(--santa-accent-soft); color: var(--santa-accent); }
+.santa-badge-primary { background: var(--santa-primary-soft); color: var(--santa-primary); }
+.santa-badge-festive { background: var(--santa-festive-soft); color: #a87400; }
+.santa-badge-success { background: #e6f7ec; color: var(--santa-success); }
+
+/* === Hero (лендинг) === */
+
+.santa-hero {
+  background: linear-gradient(135deg, var(--santa-primary) 0%, #3d13a8 100%);
+  color: #fff;
+  border-radius: var(--santa-radius-card);
+}
+
+/* === Текст === */
+
+.santa-title { font-weight: 700; color: var(--santa-text); }
+.santa-muted { color: var(--santa-muted); }

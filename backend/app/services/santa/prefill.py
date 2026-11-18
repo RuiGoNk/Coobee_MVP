@@ -74,8 +74,11 @@ def _profile_to_dict(profile: UserProfile | None) -> dict[str, Any]:
         result["gender"] = profile.gender
 
     # возраст: birth_date приоритетнее birth_year
+    # ВАЖНО: source_profile_snapshot — JSONB, date туда не сериализуется.
+    # Приводим к ISO-строке (YYYY-MM-DD). При чтении из JSONB — это строка,
+    # а не date; в Participant.birth_date (DATE) кладём уже date отдельно.
     if profile.birth_date:
-        result["birth_date"] = profile.birth_date
+        result["birth_date"] = profile.birth_date.isoformat()
     elif profile.birth_year:
         # birth_year → age (точный возраст пересчитывается на лету)
         result["age"] = date.today().year - profile.birth_year
@@ -144,17 +147,43 @@ def merge_with_snapshot(
     Мержит переопределения участника со снимком профиля.
     overrides приоритетнее snapshot. None в overrides — не переопределяет
     (partial update).
+
+    birth_date нормализуется к date (snapshot хранит ISO-строку,
+    overrides из Pydantic — date).
     """
     result: dict[str, Any] = dict(snapshot or {})
     for key, value in overrides.items():
         if value is not None:
             result[key] = value
+
+    if "birth_date" in result:
+        result["birth_date"] = normalize_birth_date(result["birth_date"])
+
     return result
 
 
 # ---------------------------------------------------------------------------
 # Финальная валидация после мержа
 # ---------------------------------------------------------------------------
+def normalize_birth_date(value: Any) -> date | None:
+    """
+    Приводит birth_date к date:
+    - date → как есть;
+    - ISO-строка → date;
+    - None / мусор → None.
+    Нужно, потому что snapshot хранит строку (JSONB),
+    а overrides из Pydantic — date.
+    """
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
 
 def validate_after_merge(merged: dict[str, Any]) -> list[str]:
     """

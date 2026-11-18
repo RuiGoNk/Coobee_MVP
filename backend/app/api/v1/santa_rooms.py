@@ -19,14 +19,16 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user, get_db
-from app.models.santa import Invite, Participant, Room
+from app.models.santa import Exclusion, Invite, Participant, Room
 from app.models.user import User, UserProfile
 from app.schemas.santa import (
+    ExclusionCreate,
+    ExclusionOut,
     InviteCreate,
     InviteOut,
     ParticipantCreate,
@@ -50,6 +52,7 @@ from app.services.santa.prefill import (
     build_prefill,
     compute_completeness,
     merge_with_snapshot,
+    normalize_birth_date,   # ← добавь
     validate_after_merge,
 )
 from app.services.santa.visibility import (
@@ -89,9 +92,87 @@ async def create_room(
     )
     db.add(room)
     await db.flush()
+
+    # Организатор автоматически становится участником:
+    # он тоже дарит и получает подарок. Анкету заполнит отдельно
+    # (prefill / PATCH participants/me), пока — минимальная заглушка.
+    organizer_profile_stmt = select(UserProfile).where(UserProfile.user_id == user.id)
+    organizer_profile = (await db.execute(organizer_profile_stmt)).scalar_one_or_none()
+    snapshot = build_prefill(organizer_profile, room.visibility_policy)["from_profile"]
+
+    # Если в профиле есть gender/age/interests — используем; иначе заглушка,
+    # чтобы participant существовал (анкету можно дозаполнить позже).
+    from datetime import date as _date
+
+    gender = snapshot.get("gender") or "prefer_not_to_say"
+
+    # snapshot["birth_date"] — ISO-строка (JSONB), парсим обратно в date
+    birth_date_raw = snapshot.get("birth_date")
+    if isinstance(birth_date_raw, str):
+        try:
+            birth_date = _date.fromisoformat(birth_date_raw)
+        except ValueError:
+            birth_date = None
+    else:
+        birth_date = birth_date_raw  # если уже date (на случай других путей)
+
+    age = snapshot.get("age")
+    if birth_date is None and age is None:
+        age = 10  # минимальный валидный возраст, пока не заполнит
+    interests = snapshot.get("interests") or ["tech"]  # мин. 1 по CHECK
+
+    organizer_participant = Participant(
+        room_id=room.id,
+        user_id=user.id,
+        display_name=user.username or "Организатор",
+        gender=gender,
+        birth_date=birth_date,
+        age=age,
+        interests=interests,
+        visibility=validate_visibility({}, room.visibility_policy),
+        source_profile_snapshot=snapshot,
+        profile_completeness=compute_completeness(snapshot),
+        status="joined",
+    )
+    db.add(organizer_participant)
+
     await db.commit()
     await db.refresh(room)
     return room
+# ---------------------------------------------------------------------------
+# Мои комнаты (где я owner или участник)
+# ---------------------------------------------------------------------------
+
+@router.get("/my", response_model=list[RoomOut])
+async def list_my_rooms(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[Room]:
+    """
+    Все комнаты, где текущий пользователь — организатор (owner_id)
+    или участник (Participant.user_id).
+
+    ВАЖНО: объявлен ДО /{room_id}, иначе FastAPI парсит "my" как UUID.
+    """
+    owned_stmt = select(Room.id).where(Room.owner_id == user.id)
+    owned_ids = set((await db.execute(owned_stmt)).scalars().all())
+
+    part_stmt = select(Participant.room_id).where(
+        Participant.user_id == user.id,
+        Participant.is_deleted.is_(False),
+    )
+    participant_room_ids = set((await db.execute(part_stmt)).scalars().all())
+
+    all_ids = owned_ids | participant_room_ids
+    if not all_ids:
+        return []
+
+    stmt = (
+        select(Room)
+        .where(Room.id.in_(all_ids))
+        .order_by(Room.created_at.desc())
+    )
+    return list((await db.execute(stmt)).scalars().all())
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +180,7 @@ async def create_room(
 # ---------------------------------------------------------------------------
 
 @router.get("/{room_id}", response_model=RoomOut)
+
 async def get_room(
     room: Room = Depends(get_current_organizer),
 ) -> Room:
@@ -400,3 +482,101 @@ async def list_participants(
         Participant.room_id == participant.room_id,
     )
     return list((await db.execute(stmt)).scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Исключения (запрещённые пары) — только организатор, до draw
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{room_id}/exclusions",
+    response_model=list[ExclusionOut],
+)
+async def list_exclusions(
+    db: AsyncSession = Depends(get_db),
+    room: Room = Depends(get_current_organizer),
+) -> list[Exclusion]:
+    stmt = select(Exclusion).where(Exclusion.room_id == room.id)
+    return list((await db.execute(stmt)).scalars().all())
+
+
+@router.post(
+    "/{room_id}/exclusions",
+    response_model=ExclusionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_exclusion(
+    payload: ExclusionCreate,
+    db: AsyncSession = Depends(get_db),
+    room: Room = Depends(get_current_organizer),
+) -> Exclusion:
+    await ensure_room_editable(db, room)
+
+    # Оба участника должны быть в этой комнате
+    stmt = select(Participant).where(
+        Participant.id.in_([payload.participant_a_id, payload.participant_b_id]),
+        Participant.room_id == room.id,
+        Participant.is_deleted.is_(False),
+    )
+    found = list((await db.execute(stmt)).scalars().all())
+    if len(found) != 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "PARTICIPANT_NOT_IN_ROOM",
+                "message": "Оба участника должны быть в комнате",
+            },
+        )
+
+    # Не дублировать (симметрично)
+    dup_stmt = select(Exclusion).where(
+        Exclusion.room_id == room.id,
+        Exclusion.participant_a_id.in_(
+            [payload.participant_a_id, payload.participant_b_id]
+        ),
+        Exclusion.participant_b_id.in_(
+            [payload.participant_a_id, payload.participant_b_id]
+        ),
+    )
+    if (await db.execute(dup_stmt)).scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "EXCLUSION_EXISTS",
+                "message": "Такая пара уже запрещена",
+            },
+        )
+
+    exclusion = Exclusion(
+        room_id=room.id,
+        participant_a_id=payload.participant_a_id,
+        participant_b_id=payload.participant_b_id,
+    )
+    db.add(exclusion)
+    await db.flush()
+    await db.commit()
+    await db.refresh(exclusion)
+    return exclusion
+
+
+@router.delete(
+    "/{room_id}/exclusions/{exclusion_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_exclusion(
+    exclusion_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    room: Room = Depends(get_current_organizer),
+) -> Response:
+    await ensure_room_editable(db, room)
+
+    exclusion = await db.get(Exclusion, exclusion_id)
+    if exclusion is None or exclusion.room_id != room.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "EXCLUSION_NOT_FOUND", "message": "Исключение не найдено"},
+        )
+    await db.delete(exclusion)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

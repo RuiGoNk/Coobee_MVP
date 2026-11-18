@@ -81,3 +81,72 @@ async def notify_user(
     await create_notification(db, user.id, type_, payload)
     if user.telegram_id:
         await _send_telegram(user.telegram_id, text)
+
+async def notify_invite(
+    db: AsyncSession, user: User, room_title: str, deep_link: str
+) -> None:
+    await notify_user(
+        db, user, NT_INVITE,
+        f"Вас пригласили в «Тайный Санта»: {room_title}\n{deep_link}",
+        {"room_title": room_title, "deep_link": deep_link},
+    )
+
+
+async def notify_joined(
+    db: AsyncSession, organizer: User, participant_name: str, room_title: str
+) -> None:
+    await notify_user(
+        db, organizer, NT_JOINED,
+        f"{participant_name} присоединился к «{room_title}»",
+        {"participant_name": participant_name},
+    )
+
+
+async def notify_draw_done(
+    db: AsyncSession, user: User, room_title: str
+) -> None:
+    await notify_user(
+        db, user, NT_DRAW_DONE,
+        f"Жеребьёвка в «{room_title}» проведена. Откройте комнату, чтобы узнать подопечного.",
+        {"room_title": room_title},
+    )
+
+
+async def notify_suggestions_ready(
+    db: AsyncSession, user: User, room_title: str
+) -> None:
+    await notify_user(
+        db, user, NT_SUGGESTIONS_READY,
+        f"Идеи подарков для «{room_title}» готовы.",
+        {"room_title": room_title},
+    )
+
+
+async def notify_new_message(
+    db: AsyncSession, user: User, room_title: str, body_preview: str
+) -> None:
+    await notify_user(
+        db, user, NT_NEW_MESSAGE,
+        f"Новое сообщение от Санты в «{room_title}»: {body_preview}",
+        {"room_title": room_title, "preview": body_preview},
+    )
+
+
+async def notify_profile_reminder(
+    db: AsyncSession, user: User, room_title: str, days_left: int
+) -> None:
+    await notify_user(
+        db, user, NT_PROFILE_REMINDER,
+        f"Напоминание: заполните анкету в «{room_title}» (осталось {days_left} дн.).",
+        {"room_title": room_title, "days_left": days_left},
+    )
+
+
+async def notify_shipping_reminder(
+    db: AsyncSession, user: User, room_title: str, days_left: int
+) -> None:
+    await notify_user(
+        db, user, NT_SHIPPING_REMINDER,
+        f"Напоминание: отправьте подарок в «{room_title}» (осталось {days_left} дн.).",
+        {"room_title": room_title, "days_left": days_left},
+    )

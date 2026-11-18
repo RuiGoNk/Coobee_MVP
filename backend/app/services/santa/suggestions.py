@@ -91,10 +91,14 @@ def _idea_contains_stopword(idea: CatalogItem, stopwords: set[str]) -> bool:
 
 def _in_budget(idea: CatalogItem, budget_min: Decimal, budget_max: Decimal) -> bool:
     """Пересечение [price_min, price_max] товара с бюджетом комнаты."""
-    pmin = idea.price_min if idea.price_min is not None else Decimal("0")
-    pmax = idea.price_max if idea.price_max is not None else pmin
+    pmin_raw = idea.price_min if idea.price_min is not None else Decimal("0")
+    pmax_raw = idea.price_max if idea.price_max is not None else pmin_raw
+    pmin = Decimal(str(pmin_raw))
+    pmax = Decimal(str(pmax_raw))
+    bmin = Decimal(str(budget_min))
+    bmax = Decimal(str(budget_max))
     # хотя бы частичное пересечение
-    return not (pmax < budget_min or pmin > budget_max)
+    return not (pmax < bmin or pmin > bmax)
 
 
 def _matches_interests(idea: CatalogItem, interests: list[str]) -> bool:
@@ -147,15 +151,23 @@ def _score(
     interest_score = min(interest_hits / max(len(interests), 1), 1.0)
 
     # бюджет: чем ближе price_max к budget_max, тем выше
-    pmin = idea.price_min if idea.price_min is not None else Decimal("0")
-    pmax = idea.price_max if idea.price_max is not None else pmin
-    mid = (pmin + pmax) / 2
-    span = budget_max - budget_min
+    # catalog.price_min/max могут быть float (SQLAlchemy), а budget_min/max —
+    # Decimal (Room). Приводим всё к Decimal через str, чтобы не ловить
+    # TypeError: unsupported operand type(s) for -: 'float' and 'Decimal'.
+    pmin_raw = idea.price_min if idea.price_min is not None else Decimal("0")
+    pmax_raw = idea.price_max if idea.price_max is not None else pmin_raw
+    pmin = Decimal(str(pmin_raw))
+    pmax = Decimal(str(pmax_raw))
+    mid = (pmin + pmax) / Decimal("2")
+
+    bmin = Decimal(str(budget_min))
+    bmax = Decimal(str(budget_max))
+    span = bmax - bmin
     if span <= 0:
         budget_score = 1.0
     else:
         # ближе к максимуму → 1, ближе к минимуму → 0
-        ratio = (mid - budget_min) / span
+        ratio = (mid - bmin) / span
         budget_score = max(0.0, min(1.0, float(ratio)))
 
     return interest_score + budget_score
