@@ -3,6 +3,8 @@ import { api, setToken, getToken, clearToken } from './api'
 import Tabs from './Tabs'
 import RecipientProfile from './RecipientProfile'
 import MyProfile from './MyProfile'
+import SantaApp from './santa/SantaApp'
+import TelegramLogin from './TelegramLogin'
 
 type Stage = 'idle' | 'waiting' | 'authed'
 
@@ -55,7 +57,14 @@ export default function App() {
   const [mainTab, setMainTab] = useState<'recipients' | 'feed'>('recipients')
   const [showAddForm, setShowAddForm] = useState(false)
   const [showMyProfile, setShowMyProfile] = useState(false)
-
+  const [showSanta, setShowSanta] = useState(() => {
+    // Открываем модуль Санты сразу, если в URL есть ?join=... или ?santa
+    const params = new URLSearchParams(window.location.search)
+    return params.has('join') || params.has('santa')
+  })
+  useEffect(() => {
+    console.log('showSanta:', showSanta, 'search:', window.location.search, 'stage:', stage)
+  }, [showSanta, stage])
   useEffect(() => {
     if (stage !== 'authed') return
     api.me().then(setMe).catch(() => setMe(null))
@@ -86,13 +95,29 @@ export default function App() {
     } catch (e) { setError(String(e)) }
   }
 
+  async function onTelegramAuth(user: { id: number; auth_date: number; hash: string; [k: string]: unknown }) {
+    setError('')
+    try {
+      const r = await api.authTelegram(user as unknown as Record<string, unknown>)
+      setToken(r.access_token)
+      setStage('authed')
+    } catch (e) { setError(String(e)) }
+  }
+
   if (stage === 'idle') {
     return (
       <div className="max-w-md mx-auto mt-20 px-6 text-center">
         <h1 className="text-3xl font-bold mb-2">CooBee</h1>
         <p className="text-gray-500 mb-8">Рекомендательный сервис подарков</p>
+
+        <div className="flex justify-center mb-4">
+          <TelegramLogin botUsername="Coobee_Ai_bot" onAuth={onTelegramAuth} />
+        </div>
+
+        <div className="text-sm text-gray-400 my-3">или</div>
+
         <button onClick={startLogin} className="px-6 py-3 rounded-xl bg-blue-600 text-white font-medium active:scale-95">
-          Войти через Telegram
+          Войти через бота (deep link)
         </button>
         {error && <p className="text-red-600 mt-4">{error}</p>}
       </div>
@@ -119,12 +144,28 @@ export default function App() {
       </div>
     )
   }
+  if (showSanta) {
+    return (
+      <div>
+        <div className="max-w-3xl mx-auto px-4 pt-3">
+          <button
+            onClick={() => setShowSanta(false)}
+            className="text-sm text-gray-600 underline"
+          >
+            ← Назад в CooBee
+          </button>
+        </div>
+        <SantaApp />
+      </div>
+    )
+  }
 
   if (!profileLoaded) return <div className="p-10 text-center text-gray-500">Загрузка…</div>
 
   if (!profile) {
     return <Onboarding onSaved={(p) => { setProfile(p); api.listRecipients().then((r) => setRecipients(r as unknown as Recipient[])).catch(() => {}) }} username={me?.username ?? null} />
   }
+
 
   if (selectedRecipient) {
     return (
@@ -172,6 +213,10 @@ export default function App() {
         <button onClick={() => setMainTab('feed')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium ${mainTab === 'feed' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>
           Для себя
+        </button>
+        <button onClick={() => setShowSanta(true)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-[var(--santa-accent)] text-white active:scale-95">
+          🎁 Тайный Санта
         </button>
       </div>
 

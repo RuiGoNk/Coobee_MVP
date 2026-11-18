@@ -1,3 +1,20 @@
+import type {
+  SantaDashboard,
+  SantaDraw,
+  SantaExclusion,
+  SantaInvite,
+  SantaMessage,
+  SantaNotification,
+  SantaParticipant,
+  SantaParticipantPublic,
+  SantaPrefill,
+  SantaPreview,
+  SantaRegenerate,
+  SantaRoom,
+  SantaSanteeCard,
+  SantaSuggestions,
+} from './types'
+
 const TOKEN_KEY = 'coobee_jwt'
 
 export function getToken(): string | null {
@@ -127,6 +144,120 @@ export const api = {
   removeFromWishlist: (externalId: string) =>
     request<void>(`/wishlist/${externalId}`, { method: 'DELETE' }),
 
-  // feed "для себя"
+  // feed
   feed: () => request<CatalogItemShort[]>('/feed'),
+
+  // =========================================================================
+  // Santa module
+  // =========================================================================
+  santa: {
+    // --- Rooms ---
+    createRoom: (payload: Record<string, unknown>) =>
+      request<SantaRoom>('/santa/rooms', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    getRoom: (roomId: string) =>
+      request<SantaRoom>(`/santa/rooms/${roomId}`),
+    getRoomForParticipant: (roomId: string) =>
+      request<SantaRoom>(`/santa/rooms/${roomId}/public`),
+    updateRoom: (roomId: string, payload: Record<string, unknown>) =>
+      request<SantaRoom>(`/santa/rooms/${roomId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+      // --- Exclusions (только организатор, до draw) ---
+    listExclusions: (roomId: string) =>
+      request<SantaExclusion[]>(`/santa/rooms/${roomId}/exclusions`),
+    createExclusion: (roomId: string, participantA: string, participantB: string) =>
+      request<SantaExclusion>(`/santa/rooms/${roomId}/exclusions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          participant_a_id: participantA,
+          participant_b_id: participantB,
+        }),
+      }),
+    deleteExclusion: (roomId: string, exclusionId: string) =>
+      request<void>(`/santa/rooms/${roomId}/exclusions/${exclusionId}`, {
+        method: 'DELETE',
+      }),
+    listMyRooms: () =>
+      request<SantaRoom[]>('/santa/rooms/my'),
+
+    // --- Invite ---
+    createInvite: (roomId: string, payload: { telegram_id?: number; expires_in_days?: number } = {}) =>
+      request<SantaInvite>(`/santa/rooms/${roomId}/invite`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    // --- Join ---
+    join: (token: string, payload: Record<string, unknown>) =>
+      request<SantaParticipant>(`/santa/rooms/join/${token}`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    // --- Participant (me) ---
+    prefill: (roomId: string) =>
+      request<SantaPrefill>(`/santa/rooms/${roomId}/participants/me/prefill`),
+    updateMyProfile: (roomId: string, payload: Record<string, unknown>) =>
+      request<SantaParticipant>(`/santa/rooms/${roomId}/participants/me`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+    preview: (roomId: string) =>
+      request<SantaPreview>(`/santa/rooms/${roomId}/participants/me/preview`),
+    exportMyData: (roomId: string) =>
+      request<Record<string, unknown>>(`/santa/rooms/${roomId}/participants/me/export`),
+
+    // --- Participants list (public) ---
+    listParticipants: (roomId: string) =>
+      request<SantaParticipantPublic[]>(`/santa/rooms/${roomId}/participants`),
+
+    // --- Draw ---
+    startDraw: (roomId: string, mode: 'random' | 'chain' = 'random') =>
+      request<SantaDraw>(`/santa/rooms/${roomId}/draw`, {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      }),
+    getDraw: (roomId: string) =>
+      request<SantaDraw>(`/santa/rooms/${roomId}/draw`),
+
+    // --- Santee card (Санта) ---
+    getMyAssignment: (roomId: string) =>
+      request<SantaSanteeCard>(`/santa/rooms/${roomId}/assignment/me`),
+
+    // --- Suggestions (Санта) ---
+    getSuggestions: (assignmentId: string) =>
+      request<SantaSuggestions>(`/santa/assignments/${assignmentId}/suggestions`),
+    regenerate: (assignmentId: string) =>
+      request<SantaRegenerate>(`/santa/assignments/${assignmentId}/suggestions/regenerate`, {
+        method: 'POST',
+      }),
+    updateGiftStatus: (assignmentId: string, giftStatus: string) =>
+      request<{ gift_status: string }>(`/santa/assignments/${assignmentId}/gift-status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ gift_status: giftStatus }),
+      }),
+
+    // --- Messages ---
+    sendMessage: (assignmentId: string, body: string) =>
+      request<SantaMessage>(`/santa/assignments/${assignmentId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      }),
+    listMessages: (assignmentId: string) =>
+      request<SantaMessage[]>(`/santa/assignments/${assignmentId}/messages`),
+
+    // --- Dashboard (организатор) ---
+    getDashboard: (roomId: string) =>
+      request<SantaDashboard>(`/santa/rooms/${roomId}/dashboard`),
+
+    // --- Notifications ---
+    listNotifications: () =>
+      request<SantaNotification[]>('/santa/notifications'),
+    markNotificationRead: (id: string) =>
+      request<SantaNotification>(`/santa/notifications/${id}/read`, { method: 'PATCH' }),
+  },
 }
