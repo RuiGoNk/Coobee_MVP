@@ -107,6 +107,15 @@ FORMAL_RELATIONS = {"boss", "subordinate", "colleague"}
 WORK_MARKERS = ("офис", "работ", "настольн", "кружк", "термокружк", "органайзер",
                 "ежедневник", "ручк", "мыш", "клавиатур", "подогрев")
 WORK_RELATIONS = {"colleague", "boss", "subordinate"}
+_NON_GIFT_RE = re.compile(
+    r"\b(стельк\w*|кабел\w*|провод\w*|клипс\w*|стяжк\w*|чистящ\w*|салфетк\w*|"
+    r"губк\w*|батарейк\w*|переходник\w*|адаптер\w*|креплени\w*|насадк\w*|фильтр\w*)\b"
+)
+
+
+def is_non_gift(record: dict) -> bool:
+    title = str(record.get("title") or "").lower().replace("беспровод", "беспров_")
+    return bool(_NON_GIFT_RE.search(title))
 
 BUDGET_NUM = {"symbolic": (0, 1000), "standard": (1000, 5000),
               "solid": (5000, 15000), "premium": (15000, None)}
@@ -286,6 +295,8 @@ def passes(record: dict, profile: dict, budget_mult: float = 1.0) -> bool:
     if gender == "female" and any(m in title for m in MALE_MARKERS):
         return False
     if gender == "male" and any(m in title for m in FEMALE_MARKERS):
+        return False
+    if is_non_gift(record):
         return False
     return True
 
