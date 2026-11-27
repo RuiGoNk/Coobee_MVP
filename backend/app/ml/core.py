@@ -111,6 +111,27 @@ _NON_GIFT_RE = re.compile(
     r"\b(стельк\w*|кабел\w*|провод\w*|клипс\w*|стяжк\w*|чистящ\w*|салфетк\w*|"
     r"губк\w*|батарейк\w*|переходник\w*|адаптер\w*|креплени\w*|насадк\w*|фильтр\w*)\b"
 )
+OCCASION_TITLE_MARKERS = {
+    "новогодн": {"new_year"},
+    "новый год": {"new_year"},
+    "рождеств": {"new_year"},
+    "8 марта": {"mar8"},
+    "23 февраля": {"feb23"},
+    "свадебн": {"wedding"},
+    "годовщин": {"anniversary"},
+    "выпускн": {"sep1"},
+    "школьн": {"sep1", "teacher_day"},
+}
+
+
+def occasion_mismatch(record: dict, profile: dict) -> bool:
+    """True, если в названии зашит чужой повод."""
+    title = str(record.get("title") or "").lower()
+    occasion = profile.get("occasion") or ""
+    for marker, allowed in OCCASION_TITLE_MARKERS.items():
+        if marker in title and occasion and occasion not in allowed:
+            return True
+    return False
 
 
 def is_non_gift(record: dict) -> bool:
@@ -340,6 +361,8 @@ def passes(record: dict, profile: dict, budget_mult: float = 1.0) -> bool:
         return False
     if is_non_gift(record):
         return False
+    if occasion_mismatch(record, profile) and category_of(record) != "toys":
+        return False
     return True
 
 
@@ -363,6 +386,8 @@ def score(record: dict, profile: dict) -> float:
     title = str(record.get("title") or "").lower()
     if profile.get("relationship") in WORK_RELATIONS and any(m in title for m in WORK_MARKERS):
         total += 0.12
+    if occasion_mismatch(record, profile):
+        total -= 0.25
     return round(total, 4)
 
 

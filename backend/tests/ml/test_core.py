@@ -158,3 +158,24 @@ def test_why_code_interest_match():
 def test_score_is_deterministic():
     rec, p = row(), profile(interests=["beauty"])
     assert score(rec, p) == score(rec, p)
+
+# ------------------------------------------------------- повод в названии
+@pytest.mark.parametrize("title,occasion,expected", [
+    ("Бомбочки для ванны набор Новогодние подарок для девушки", "birthday", False),
+    ("Бомбочки для ванны набор Новогодние подарок для девушки", "new_year", True),
+    ("Кружка с подогревом", "birthday", True),
+    ("Подарочный набор косметики", "new_year", True),
+    ("Набор 8 марта для женщин", "mar8", True),
+    ("Набор 8 марта для женщин", "birthday", False),
+])
+def test_occasion_mismatch_filter(title, occasion, expected):
+    from app.ml.core import occasion_mismatch
+    rec = row(title=title)
+    assert passes(rec, profile(occasion=occasion)) is expected
+    assert occasion_mismatch(rec, profile(occasion=occasion)) is (not expected)
+
+
+def test_toys_exempt_from_occasion_marker():
+    """Ёлочные игрушки на день рождения — норма, не отсекаем."""
+    rec = row(title="Новогодний набор елочных игрушек", category_path=["Игрушки"])
+    assert passes(rec, profile(occasion="birthday"))
