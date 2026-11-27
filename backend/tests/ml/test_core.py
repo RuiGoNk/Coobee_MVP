@@ -179,3 +179,23 @@ def test_toys_exempt_from_occasion_marker():
     """Ёлочные игрушки на день рождения — норма, не отсекаем."""
     rec = row(title="Новогодний набор елочных игрушек", category_path=["Игрушки"])
     assert passes(rec, profile(occasion="birthday"))
+
+# ------------------------------------------------------------ пол по родству
+@pytest.mark.parametrize("gender,relationship,expected", [
+    ("unisex", "mother", "female"),
+    ("unisex", "husband", "male"),
+    ("", "wife", "female"),
+    ("any", "father", "male"),
+    ("female", "father", "female"),   # явный пол важнее родства
+    ("unisex", "colleague", None),
+])
+def test_resolve_gender(gender, relationship, expected):
+    from app.ml.core import _resolve_gender
+    assert _resolve_gender({"gender": gender, "relationship": relationship}) == expected
+
+
+def test_mother_with_unisex_gender_does_not_get_male_item():
+    from app.ml.core import _resolve_gender
+    p = profile(gender=_resolve_gender({"gender": "unisex", "relationship": "mother"}))
+    rec = row(title="Набор для шашлыка подарочный для мужчин в кейсе")
+    assert not passes(rec, p)

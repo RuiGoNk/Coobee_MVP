@@ -103,6 +103,12 @@ RELATIONSHIP_MAP = {
     "self": {},
     "other": {},
 }
+RELATION_GENDER = {
+    "mother": "female", "wife": "female", "girlfriend": "female",
+    "sister": "female", "friend_f": "female",
+    "father": "male", "husband": "male", "boyfriend": "male",
+    "brother": "male", "friend_m": "male",
+}
 FORMAL_RELATIONS = {"boss", "subordinate", "colleague"}
 WORK_MARKERS = ("офис", "работ", "настольн", "кружк", "термокружк", "органайзер",
                 "ежедневник", "ручк", "мыш", "клавиатур", "подогрев")
@@ -421,6 +427,13 @@ def diversify(ranked, limit: int):
                 break
     return picked[:limit]
 
+def _resolve_gender(recipient: dict) -> str | None:
+    """unisex/пусто при известном родстве — берём пол из родства."""
+    gender = (recipient.get("gender") or "").strip().lower()
+    by_relation = RELATION_GENDER.get(recipient.get("relationship") or "")
+    if gender in {"", "unisex", "any"}:
+        return by_relation
+    return gender
 
 def profile_from_recipient(recipient: dict) -> dict:
     lo, hi = BUDGET_NUM.get(recipient.get("budget_range") or "standard", (1000, 5000))
@@ -433,7 +446,7 @@ def profile_from_recipient(recipient: dict) -> dict:
         "occasion": recipient.get("occasion") or "just_because",
         "relationship": recipient.get("relationship") or "other",
         "age": recipient.get("age"),
-        "gender": recipient.get("gender"),
+        "gender": _resolve_gender(recipient),
         "child_age": child_age,
         "budget_min": lo,
         "budget_max": hi,

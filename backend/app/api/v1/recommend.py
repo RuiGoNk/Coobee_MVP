@@ -88,6 +88,17 @@ def _fallback_recommend(items: list[CatalogItem], recipient: dict) -> list[Catal
     ranked = sorted(items, key=score, reverse=True)
     return ranked[:5]
 
+def _badges(raw) -> list[dict] | None:
+    """badges приходит строкой от парсера или словарём от админки."""
+    if not raw:
+        return None
+    out = []
+    for b in raw:
+        if isinstance(b, dict):
+            out.append(b)
+        elif isinstance(b, str) and b.strip():
+            out.append({"label": b.strip()})
+    return out or None
 
 @router.post("", response_model=RecommendOut)
 async def recommend(
@@ -152,7 +163,7 @@ async def recommend(
             image_url=it.image_url,
             marketplace_url=it.marketplace_url,
             marketplaces=details.get("marketplaces"),
-            badges=details.get("badges"),
+            badges=_badges(details.get("badges")),
             why=why,
         ))
     return RecommendOut(items=out)
