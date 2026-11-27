@@ -7,3 +7,5 @@ certs/
 .idea/
 
 docker-compose.override.yml*
+
+out/
