@@ -112,6 +112,69 @@ WEIGHTS = {"interest": 0.30, "occasion": 0.20, "relation": 0.15, "quality": 0.07
 MIN_RATING = 4.6
 MAX_DELIVERY_DAYS = 7
 BUDGET_STEPS = (1.0, 1.2, 2.0)
+TAG_RU = {
+    "cooking": "кулинария посуда рецепты готовка",
+    "coffee": "кофе кофемашина турка",
+    "tea": "чай чайник заварка",
+    "gardening": "сад растения горшки",
+    "home_interior": "дом интерьер уют декор",
+    "books_fiction": "книга роман чтение",
+    "books_nonfiction": "книга чтение",
+    "board_games": "настольная игра",
+    "tech": "гаджет техника устройство",
+    "gaming_console": "игровая приставка геймпад",
+    "gaming_pc": "игровая мышь клавиатура",
+    "art": "рисование краски кисти",
+    "handmade": "рукоделие набор творчество",
+    "photography": "фотоаппарат фотография",
+    "travel": "путешествие чемодан термос",
+    "hiking": "поход туризм рюкзак",
+    "fishing": "рыбалка снасти",
+    "auto": "автомобиль авто",
+    "moto": "мотоцикл мото",
+    "sport_ski": "лыжи сноуборд",
+    "sport_gym": "фитнес тренировка",
+    "sport_yoga": "йога коврик",
+    "beauty": "косметика красота уход",
+    "perfume": "парфюм аромат духи",
+    "jewelry": "украшение серебро золото",
+    "watches": "часы наручные",
+    "fashion": "аксессуар стиль сумка",
+    "science": "наука набор опытов",
+    "music_instruments": "музыка инструмент",
+}
+OCCASION_RU = {
+    "new_year": "новый год праздник подарок",
+    "birthday": "день рождения подарок",
+    "mar8": "8 марта цветы женский",
+    "feb23": "23 февраля мужской",
+    "wedding": "свадьба подарок",
+    "housewarming": "новоселье дом",
+    "sep1": "школа учеба",
+    "teacher_day": "учитель школа",
+}
+RELATION_RU = {
+    "mother": "мама маме", "father": "папа папе",
+    "wife": "жена жене", "girlfriend": "девушка",
+    "husband": "муж мужу", "boyfriend": "парень",
+    "sister": "сестра сестре", "brother": "брат брату",
+    "friend_f": "подруга подруге", "friend_m": "друг другу",
+    "colleague": "коллега работе", "boss": "начальник офис",
+    "child": "ребенок детский игрушка",
+}
+
+
+def build_query(profile: dict) -> str:
+    """Профиль -> текстовый запрос. Позже сюда встанет LLM (query expansion)."""
+    parts: list[str] = []
+    for tag in profile.get("interests") or []:
+        if TAG_RU.get(tag):
+            parts.append(TAG_RU[tag])
+    parts.append(OCCASION_RU.get(profile.get("occasion") or "", ""))
+    parts.append(RELATION_RU.get(profile.get("relationship") or "", ""))
+    if profile.get("child_age") is not None:
+        parts.append("детский ребенок")
+    return " ".join(p for p in parts if p).strip()
 KID_MARKERS = ("детск", "для детей", "для девочек", "для мальчиков",
                "единорог", "погремушк", "0+", "1+", "2+", "3+")
 MALE_MARKERS = ("для мужчин", "мужск")
@@ -119,6 +182,7 @@ FEMALE_MARKERS = ("для женщин", "женск", "для девочек", 
 
 
 def load_jsonl(path: str) -> list[dict]:
+    path = str(path).strip().strip('"').rstrip("\\/")   # защита от лишнего слэша
     with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
@@ -290,7 +354,8 @@ def profile_from_recipient(recipient: dict) -> dict:
     }
 
 
-def recommend(profile: dict, records: list[dict], limit: int = 5) -> dict:
+def recommend(profile: dict, records: list[dict], limit: int = 5, index=None) -> dict:
+    """index — Index из app.ml.retrieval; без него поиск не используется."""
     pool, step = [], 1.0
     for step in BUDGET_STEPS:
         pool = [r for r in records if passes(r, profile, step)]
@@ -300,21 +365,41 @@ def recommend(profile: dict, records: list[dict], limit: int = 5) -> dict:
         return {"items": [], "reason": "no_candidates", "budget_step": step,
                 "candidates": 0, "hints": ["Расширьте бюджет или измените повод"]}
 
-    ranked = sorted(((r, score(r, profile)) for r in pool), key=lambda x: x[1], reverse=True)
+    # BM25 по всему каталогу, затем оставляем только прошедших фильтры
+    query = build_query(profile)
+    bm25: dict[str, float] = {}
+    if index is not None and query:
+        bm25 = {rec["external_id"]: s for rec, s in index.search(query, k=len(records))}
+
+    pool_ids = {r["external_id"] for r in pool}
+    bm25 = {k: v for k, v in bm25.items() if k in pool_ids}
+
+    ranked = []
+    for rec in pool:
+        base = score(rec, profile)
+        rel = bm25.get(rec["external_id"], 0.0)
+        total = round(0.75 * base + 0.25 * rel, 4) if bm25 else base
+        ranked.append((rec, total))
+    ranked.sort(key=lambda x: x[1], reverse=True)
+
     items = []
     for pos, (rec, s) in enumerate(diversify(ranked, limit), 1):
         items.append({
             "position": pos, "external_id": rec["external_id"], "title": rec["title"],
             "price": rec.get("price_min"), "category": category_of(rec),
             "score": s, "why_code": why_code(rec, profile),
+            "retrieval": round(bm25.get(rec["external_id"], 0.0), 3),
             "over_budget": bool(profile.get("budget_max")
                                 and (rec.get("price_min") or 0) > profile["budget_max"]),
         })
-    return {"items": items, "budget_step": step, "candidates": len(pool)}
+    return {"items": items, "budget_step": step, "candidates": len(pool),
+            "query": query, "retrieval_used": bool(bm25)}
 
 
 def demo(path: str) -> None:
     records = [from_wb_row(r) for r in load_jsonl(path)]
+    from .retrieval import Index
+    index = Index.build([from_wb_row(r) for r in load_jsonl(path)])
     recipients = [
         {"name": "маме 58, ДР, standard", "relationship": "mother", "occasion": "birthday",
          "gender": "female", "age": 58, "budget_range": "standard",
@@ -327,7 +412,7 @@ def demo(path: str) -> None:
          "gender": "female", "age": 40, "budget_range": "standard", "details": {}},
     ]
     for rec in recipients:
-        out = recommend(profile_from_recipient(rec), records)
+        out = recommend(profile_from_recipient(rec), records, index=index)
         print(f"\n== {rec['name']}: кандидатов {out['candidates']}, шаг x{out['budget_step']}")
         if not out["items"]:
             print(f"   пусто: {out.get('reason')} | {out.get('hints')}")
