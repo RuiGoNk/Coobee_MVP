@@ -104,6 +104,9 @@ RELATIONSHIP_MAP = {
     "other": {},
 }
 FORMAL_RELATIONS = {"boss", "subordinate", "colleague"}
+WORK_MARKERS = ("офис", "работ", "настольн", "кружк", "термокружк", "органайзер",
+                "ежедневник", "ручк", "мыш", "клавиатур", "подогрев")
+WORK_RELATIONS = {"colleague", "boss", "subordinate"}
 
 BUDGET_NUM = {"symbolic": (0, 1000), "standard": (1000, 5000),
               "solid": (5000, 15000), "premium": (15000, None)}
@@ -302,7 +305,12 @@ def score(record: dict, profile: dict) -> float:
     total += WEIGHTS["relation"] * RELATIONSHIP_MAP.get(profile.get("relationship") or "", {}).get(cat, 0.0)
     rating, reviews = record.get("rating"), record.get("reviews_count") or 0
     q = 0.3 * (rating / 5.0 if rating else 0.4) + 0.7 * (math.log1p(reviews) / math.log1p(2000))
-    return round(total + WEIGHTS["quality"] * min(q, 1.0), 4)
+    total += WEIGHTS["quality"] * min(q, 1.0)
+
+    title = str(record.get("title") or "").lower()
+    if profile.get("relationship") in WORK_RELATIONS and any(m in title for m in WORK_MARKERS):
+        total += 0.12
+    return round(total, 4)
 
 
 def why_code(record: dict, profile: dict) -> str:
