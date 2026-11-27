@@ -1,6 +1,6 @@
 import random
 import uuid
-
+from app.services import ml_service
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -116,8 +116,19 @@ async def recommend(
 
     items_stmt = select(CatalogItem).where(CatalogItem.is_available.is_(True))
     all_items = [it for it in (await db.execute(items_stmt)).scalars().all() if it.id not in rated_ids]
-    # TODO: заменить на ml_service.get_recommendations(user_dict, recipient_dict)
-    picked = _fallback_recommend(list(all_items), recipient_dict)
+
+    ml_result = await ml_service.recommend_items(user_dict, recipient_dict, list(all_items))
+    by_ext = {it.external_id: it for it in all_items if it.external_id}
+    by_id = {str(it.id): it for it in all_items}
+    picked = []
+    why_map: dict[str, str | None] = {}
+    for entry in ml_result["items"]:
+        obj = by_ext.get(entry["external_id"]) or by_id.get(entry["external_id"])
+        if obj is not None:
+            picked.append(obj)
+            why_map[entry["external_id"]] = entry.get("why")
+    if not picked:
+        picked = _fallback_recommend(list(all_items), recipient_dict)
 
     recipient_interests = set((recipient_dict.get("details") or {}).get("interests") or [])
     out: list[RecommendItem] = []
@@ -129,7 +140,7 @@ async def recommend(
             why_parts.append(f"совпадает по интересам: {', '.join(matched)}")
         if it.price_min is not None and it.price_max is not None:
             why_parts.append(f"в бюджете {it.price_min}–{it.price_max} ₽")
-        why = "; ".join(why_parts) or None
+        why = why_map.get(it.external_id or str(it.id)) or ("; ".join(why_parts) or None)
 
         details = it.details or {}
         out.append(RecommendItem(

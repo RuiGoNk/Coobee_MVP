@@ -199,9 +199,16 @@ def load_jsonl(path: str) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
+CATEGORIES = ("accessories", "beauty", "home_comfort", "tableware",
+              "small_appliances", "toys", "tourism", "books_boardgames",
+              "coffee_tea", "auto", "hobby")
+
+
 def category_of(record: dict) -> str | None:
     for raw in record.get("category_path") or []:
         key = str(raw).strip().lower()
+        if key in CATEGORIES:
+            return key
         if key in WB_ROOT_MAP:
             return WB_ROOT_MAP[key]
         for prefix, cat in WB_ROOT_MAP.items():
@@ -253,6 +260,41 @@ def from_wb_row(row: dict) -> dict:
         "in_stock": row.get("availability") != "out_of_stock",
     }
 
+def from_db_item(item) -> dict:
+    """CatalogItem (SQLAlchemy) -> внутренняя запись."""
+    details = item.details or {}
+    rating = details.get("rating")
+    if rating is None:
+        rating = _recover_rating({"reviews_distribution": details.get("reviews_distribution")})
+    category_path = details.get("category_path") or []
+    if not category_path and item.tags:
+        category_path = [str(t) for t in item.tags]
+    return {
+        "external_id": item.external_id or str(item.id),
+        "title": item.title,
+        "description": item.description or "",
+        "price_min": item.price_min,
+        "price_max": item.price_max,
+        "category_path": category_path,
+        "attributes": details.get("attributes") or {},
+        "slug": details.get("slug"),
+        "rating": rating,
+        "reviews_count": details.get("reviews_count") or 0,
+        "delivery_days_min": (details.get("delivery") or {}).get("days_min"),
+        "in_stock": bool(item.is_available),
+    }
+
+
+WHY_TEXT = {
+    "matches_interest": "совпадает с интересами получателя",
+    "matches_occasion": "уместно к поводу",
+    "matches_relation": "подходит для этого человека",
+    "popular_in_category": "популярный выбор в категории",
+}
+
+
+def why_text(code: str | None) -> str | None:
+    return WHY_TEXT.get(code or "")
 
 def passes(record: dict, profile: dict, budget_mult: float = 1.0) -> bool:
     lo = float(profile.get("budget_min") or 0)
