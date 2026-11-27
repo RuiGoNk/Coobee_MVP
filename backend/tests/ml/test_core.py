@@ -2,7 +2,7 @@
 import pytest
 
 from app.ml.core import (build_query, diversify, from_wb_row, passes,
-                         recommend, score, why_code)
+                         recommend, score, why_code, is_kids_item)
 
 
 def row(**kw):
@@ -161,24 +161,29 @@ def test_score_is_deterministic():
 
 # ------------------------------------------------------- повод в названии
 @pytest.mark.parametrize("title,occasion,expected", [
-    ("Бомбочки для ванны набор Новогодние подарок для девушки", "birthday", False),
+    ("Бомбочки для ванны набор Новогодние подарок для девушки", "birthday", True),
     ("Бомбочки для ванны набор Новогодние подарок для девушки", "new_year", True),
     ("Кружка с подогревом", "birthday", True),
     ("Подарочный набор косметики", "new_year", True),
     ("Набор 8 марта для женщин", "mar8", True),
     ("Набор 8 марта для женщин", "birthday", False),
 ])
-def test_occasion_mismatch_filter(title, occasion, expected):
-    from app.ml.core import occasion_mismatch
+def test_occasion_filter(title, occasion, expected):
+    """Узкие праздники фильтруют жёстко, универсальные — только буст."""
     rec = row(title=title)
     assert passes(rec, profile(occasion=occasion)) is expected
-    assert occasion_mismatch(rec, profile(occasion=occasion)) is (not expected)
 
 
-def test_toys_exempt_from_occasion_marker():
-    """Ёлочные игрушки на день рождения — норма, не отсекаем."""
-    rec = row(title="Новогодний набор елочных игрушек", category_path=["Игрушки"])
-    assert passes(rec, profile(occasion="birthday"))
+@pytest.mark.parametrize("title,expected", [
+    ("Бомбочки для ванны набор Новогодние подарок для девушки", {"new_year"}),
+    ("Набор 8 марта для женщин", {"mar8"}),
+    ("Кожаный ремень", set()),
+    ("Плед шерстяной узор елочка", set()),
+])
+def test_record_occasions_explicit_only(title, expected):
+    """Явная привязка к поводу: лист категории, характеристики, описание."""
+    from app.ml.core import record_occasions
+    assert record_occasions(row(title=title)) == expected
 
 # ------------------------------------------------------------ пол по родству
 @pytest.mark.parametrize("gender,relationship,expected", [
@@ -199,3 +204,43 @@ def test_mother_with_unisex_gender_does_not_get_male_item():
     p = profile(gender=_resolve_gender({"gender": "unisex", "relationship": "mother"}))
     rec = row(title="Набор для шашлыка подарочный для мужчин в кейсе")
     assert not passes(rec, p)
+
+def test_soft_occasion_lowers_score_but_keeps_item():
+    """Новогодний товар на ДР: проходит, но скор ниже, чем у нейтрального."""
+    from app.ml.core import score
+    xmas = row(title="Бомбочки для ванны Новогодние", category_path=["Красота"])
+    neutral = row(title="Бомбочки для ванны", category_path=["Красота"])
+    p = profile(occasion="birthday")
+    assert score(xmas, p) < score(neutral, p)
+
+
+def test_hard_occasion_still_filters():
+    """8 марта — узкий праздник: на ДР отсекаем."""
+    rec = row(title="Набор 8 марта для женщин", category_path=["Красота"])
+    assert not passes(rec, profile(occasion="birthday"))
+
+
+def test_universal_item_passes_any_soft_occasion():
+    """Ремень не привязан к поводу — подходит и на НГ, и на ДР."""
+    rec = row(title="Кожаный ремень", category_path=["Аксессуары"])
+    assert passes(rec, profile(occasion="new_year"))
+    assert passes(rec, profile(occasion="birthday"))
+
+def test_from_wb_row_keeps_description():
+    """Описание должно попадать в запись: по нему ищутся пол, детскость, BM25."""
+    rec = from_wb_row({"sku": "1", "title": "Товар", "description": "Полный текст про малышку",
+                       "price": {"discounted": 1000}, "category_path": ["Красота"]})
+    assert rec["description"] == "Полный текст про малышку"
+
+
+def test_kids_item_detected_by_description_only():
+    """Детский набор, где маркер только в описании, а не в названии."""
+    rec = from_wb_row({
+        "sku": "2",
+        "title": "Подарочный набор блеск для губ, лак для ногтей и сумочка",
+        "description": "Набор для девочек Limoni Bambini создан с учётом детской безопасности, "
+                       "порадует маленькую принцессу и малышку.",
+        "price": {"discounted": 2500},
+        "category_path": ["Красота"],
+    })
+    assert is_kids_item(rec)

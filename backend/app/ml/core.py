@@ -129,6 +129,34 @@ OCCASION_TITLE_MARKERS = {
     "школьн": {"sep1", "teacher_day"},
 }
 
+# узкие календарные праздники: по ним фильтруем жёстко,
+# остальные (НГ, ДР, свадьба) — только буст
+HARD_EXCLUSIVE_OCCASIONS = {"mar8", "feb23", "sep1", "teacher_day"}
+
+_OCCASION_TEXT_RE = {
+    "new_year": re.compile(
+        r"\b(новогодн\w*|ёлочн\w*|елочн\w*|рождеств\w*|новый\s+год\w*|для\s+ёлк\w*|на\s+ёлк\w*)\b"),
+    "mar8": re.compile(r"\b(8\s*марта|международный\s+женский\s+день)\b"),
+    "feb23": re.compile(r"\b(23\s*февраля|день\s+защитника\w*)\b"),
+    "wedding": re.compile(r"\b(свадебн\w*)\b"),
+    "anniversary": re.compile(r"\b(годовщин\w*)\b"),
+    "sep1": re.compile(r"\b(1\s*сентября|школьн\w*|выпускн\w*)\b"),
+    "teacher_day": re.compile(r"\b(день\s+учителя)\b"),
+    "housewarming": re.compile(r"\b(новосель\w*)\b"),
+}
+
+
+def record_occasions(record: dict) -> set[str]:
+    """Поводы, к которым товар явно привязан. Пусто = универсальный."""
+    path = [str(p).lower() for p in (record.get("category_path") or [])]
+    attrs = " ".join(str(v).lower() for v in (record.get("attributes") or {}).values())
+    text = " ".join([
+        str(record.get("title") or "").lower(),
+        path[-1] if path else "",
+        attrs,
+        str(record.get("description") or "").lower()[:400],
+    ])
+    return {occ for occ, rx in _OCCASION_TEXT_RE.items() if rx.search(text)}
 
 def occasion_mismatch(record: dict, profile: dict) -> bool:
     """True, если в названии зашит чужой повод."""
@@ -276,6 +304,7 @@ def from_wb_row(row: dict) -> dict:
     return {
         "external_id": row.get("sku"),
         "title": row.get("title"),
+        "description": row.get("description") or "",
         "price_min": price,
         "price_max": price,
         "category_path": row.get("category_path") or [],
@@ -323,6 +352,39 @@ WHY_TEXT = {
 def why_text(code: str | None) -> str | None:
     return WHY_TEXT.get(code or "")
 
+# сильные маркеры детского товара в описании
+KID_DESC_MARKERS = ("детск", "для девочек", "для девочки", "для мальчиков",
+                    "для мальчика", "малышк", "принцесс", "для детей",
+                    "ребенку", "ребёнку", "малыша")
+
+
+def is_kids_item(record: dict) -> bool:
+    """Детский товар: маркер в названии ИЛИ несколько сильных маркеров в описании."""
+    title = str(record.get("title") or "").lower()
+    if any(m in title for m in KID_MARKERS):
+        return True
+    desc = str(record.get("description") or "").lower()[:700]
+    if not desc:
+        return False
+    hits = sum(1 for m in KID_DESC_MARKERS if m in desc)
+    return hits >= 2 or "детск" in desc
+
+def text_gender(record: dict) -> str | None:
+    """Пол по названию И описанию. None = унисекс или не определить."""
+    text = (str(record.get("title") or "") + " "
+            + str(record.get("description") or "")[:600]).lower()
+    if "унисекс" in text:
+        return None
+    has_f = any(m in text for m in FEMALE_MARKERS)
+    has_m = any(m in text for m in MALE_MARKERS)
+    if has_f and has_m:
+        return None
+    if has_f:
+        return "female"
+    if has_m:
+        return "male"
+    return None
+
 def passes(record: dict, profile: dict, budget_mult: float = 1.0) -> bool:
     lo = float(profile.get("budget_min") or 0)
     hi_raw = profile.get("budget_max")
@@ -358,17 +420,21 @@ def passes(record: dict, profile: dict, budget_mult: float = 1.0) -> bool:
         return False
     title = str(record.get("title") or "").lower()
     if profile.get("child_age") is None:          # взрослому — не детское
-        if any(m in title for m in KID_MARKERS):
+        if is_kids_item(record):
             return False
     gender = profile.get("gender")
-    if gender == "female" and any(m in title for m in MALE_MARKERS):
-        return False
-    if gender == "male" and any(m in title for m in FEMALE_MARKERS):
-        return False
+    if gender in {"male", "female"}:
+        tg = text_gender(record)
+        if tg is not None and tg != gender:
+            return False
     if is_non_gift(record):
         return False
-    if occasion_mismatch(record, profile) and category_of(record) != "toys":
-        return False
+    explicit = record_occasions(record)
+    wanted = profile.get("occasion") or ""
+    if explicit and wanted and wanted not in explicit:
+        # жёстко отсекаем только узкие календарные праздники
+        if (explicit & HARD_EXCLUSIVE_OCCASIONS) and category_of(record) != "toys":
+            return False
     return True
 
 
@@ -381,19 +447,41 @@ def _map_weights(values, table) -> dict[str, float]:
 
 
 def score(record: dict, profile: dict) -> float:
+    """Итоговый скор товара. Сумма взвешенных компонент + поправки повода."""
     cat = category_of(record)
-    total = WEIGHTS["interest"] * _map_weights(profile.get("interests"), INTEREST_MAP).get(cat, 0.0)
-    total += WEIGHTS["occasion"] * OCCASION_MAP.get(profile.get("occasion") or "", {}).get(cat, 0.0)
-    total += WEIGHTS["relation"] * RELATIONSHIP_MAP.get(profile.get("relationship") or "", {}).get(cat, 0.0)
-    rating, reviews = record.get("rating"), record.get("reviews_count") or 0
+    total = 0.0
+
+    # 1. интерес получателя: интерес -> категория -> товар
+    total += WEIGHTS["interest"] * _map_weights(
+        profile.get("interests"), INTEREST_MAP).get(cat, 0.0)
+
+    # 2. повод: общая матрица "повод -> категория"
+    total += WEIGHTS["occasion"] * OCCASION_MAP.get(
+        profile.get("occasion") or "", {}).get(cat, 0.0)
+
+    # 3. родство: "кто он вам" -> категория
+    total += WEIGHTS["relation"] * RELATIONSHIP_MAP.get(
+        profile.get("relationship") or "", {}).get(cat, 0.0)
+
+    # 4. качество: рейтинг + популярность
+    rating = record.get("rating")
+    reviews = record.get("reviews_count") or 0
     q = 0.3 * (rating / 5.0 if rating else 0.4) + 0.7 * (math.log1p(reviews) / math.log1p(2000))
     total += WEIGHTS["quality"] * min(q, 1.0)
 
+    # 5. офисный контекст (временная эвристика вместо use_context)
     title = str(record.get("title") or "").lower()
     if profile.get("relationship") in WORK_RELATIONS and any(m in title for m in WORK_MARKERS):
         total += 0.12
-    if occasion_mismatch(record, profile):
-        total -= 0.25
+
+    # 6. явная привязка к поводу: лист категории + характеристики + описание
+    explicit = record_occasions(record)
+    wanted = profile.get("occasion") or ""
+    if wanted and wanted in explicit:
+        total += 0.15       # товар явно к этому поводу — поднимаем
+    elif explicit and wanted:
+        total -= 0.25       # в товаре зашит чужой повод — опускаем
+
     return round(total, 4)
 
 
